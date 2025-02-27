@@ -1,0 +1,9 @@
+[
+  {
+    "featureType": "all",
+    "elementType": "all",
+    "stylers": [
+      { "saturation": -50 }
+    ]
+  }
+]
