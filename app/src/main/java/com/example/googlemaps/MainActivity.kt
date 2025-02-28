@@ -8,6 +8,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
+import android.widget.ImageView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
@@ -23,239 +24,289 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CircleOptions
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
-import com.google.android.gms.maps.model.PolygonOptions
 import com.google.android.gms.maps.model.PolylineOptions
+import com.google.android.gms.maps.model.CircleOptions
+import com.google.android.gms.maps.model.PolygonOptions
+import android.widget.TextView
 import java.io.IOException
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var myMap: GoogleMap
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var searchView: SearchView
+    private lateinit var fromSearchView: SearchView
+    private lateinit var toSearchView: SearchView
+    private lateinit var distanceText: TextView
+    private lateinit var swapIcon: ImageView
     private val LOCATION_PERMISSION_REQUEST_CODE = 1
-    private var suggestionAddresses: List<Address> = emptyList() // Store addresses for suggestion selection
+    private var fromLatLng: LatLng? = null
+    private var toLatLng: LatLng? = null
+    private var fromSuggestionAddresses: List<Address> = emptyList()
+    private var toSuggestionAddresses: List<Address> = emptyList()
 
-    // Initializes the activity, sets up UI components, and prepares the map and search functionality
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge() // Enables edge-to-edge display for a fullscreen experience
-        setContentView(R.layout.activity_main) // Loads the layout defined in activity_main.xml
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom) // Adjusts padding for system bars
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
 
-        // Initializes the FusedLocationProviderClient to fetch the device's location
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Sets up the SearchView for place searching and suggestions
-        searchView = findViewById(R.id.mapSearch)
-        setupSearchView()
+        fromSearchView = findViewById(R.id.fromSearch)
+        toSearchView = findViewById(R.id.toSearch)
+        distanceText = findViewById(R.id.distanceText)
+        swapIcon = findViewById(R.id.swapIcon)
+        setupSearchViews()
 
-        // Initializes and adds the map fragment to the layout
+        swapIcon.setOnClickListener {
+            swapSearchViewContents()
+        }
+
         val mapFragment = SupportMapFragment.newInstance()
         supportFragmentManager
             .beginTransaction()
-            .add(R.id.map, mapFragment) // Places the map below the SearchView
+            .add(R.id.map, mapFragment)
             .commit()
-        mapFragment.getMapAsync(this) // Calls onMapReady when the map is ready
+        mapFragment.getMapAsync(this)
 
-        // Requests location permissions to enable location features
         requestLocationPermissions()
     }
 
-    // Configures the GoogleMap when it’s ready, setting up UI controls and initial map state
     override fun onMapReady(googleMap: GoogleMap) {
-        myMap = googleMap // Assigns the GoogleMap instance to the class variable
+        myMap = googleMap
+        myMap.uiSettings.isZoomControlsEnabled = true
+        myMap.uiSettings.isCompassEnabled = true
+        myMap.uiSettings.isMapToolbarEnabled = true
+        myMap.uiSettings.isMyLocationButtonEnabled = true
+        myMap.uiSettings.isTiltGesturesEnabled = true
+        myMap.uiSettings.isRotateGesturesEnabled = true
+        myMap.uiSettings.isScrollGesturesEnabled = true
+        myMap.uiSettings.isZoomGesturesEnabled = true
 
-        // Enables map UI controls for user interaction
-        myMap.uiSettings.isZoomControlsEnabled = true // Adds zoom in/out buttons
-        myMap.uiSettings.isCompassEnabled = true // Displays a compass in the map (appears below SearchView)
-        myMap.uiSettings.isMapToolbarEnabled = true // Enables toolbar actions in the map
-        myMap.uiSettings.isMyLocationButtonEnabled = true // Adds "My Location" button (appears below SearchView)
-        myMap.uiSettings.isTiltGesturesEnabled = true // Allows tilting with two-finger gesture
-        myMap.uiSettings.isRotateGesturesEnabled = true // Allows rotating with two-finger gesture
-        myMap.uiSettings.isScrollGesturesEnabled = true // Enables panning the map
-        myMap.uiSettings.isZoomGesturesEnabled = true // Enables pinch-to-zoom
-
-        // Enables the user's location dot if permissions are granted
         if (checkLocationPermission()) {
-            myMap.isMyLocationEnabled = true // Shows a blue dot at the user's location
-            getCurrentLocation() // Fetches and displays the current location
+            myMap.isMyLocationEnabled = true
+            getCurrentLocation()
         }
 
-        // Sets the map type to satellite view for a detailed visual
         myMap.mapType = GoogleMap.MAP_TYPE_NORMAL
 
-        // Adds a listener to place a marker when the user taps the map
         myMap.setOnMapClickListener { latLng ->
             Log.d("MapClick", "Clicked at: $latLng")
-            myMap.addMarker(MarkerOptions().position(latLng).title("Clicked Here")) // Adds marker at tap location
+            myMap.addMarker(MarkerOptions().position(latLng).title("Clicked Here"))
         }
 
-        // Shows the info window when a marker is clicked
         myMap.setOnMarkerClickListener { marker ->
-            marker.showInfoWindow() // Displays the marker’s title and snippet
-            true // Indicates the event is consumed
+            marker.showInfoWindow()
+            true
         }
     }
 
-    // Configures the SearchView to handle search submissions, suggestions, and selection
-    private fun setupSearchView() {
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            // Triggered when the user submits a search query (e.g., presses Enter)
+    private fun setupSearchViews() {
+        fromSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
             override fun onQueryTextSubmit(query: String?): Boolean {
-                query?.let { searchQuery ->
-                    searchPlace(searchQuery) // Searches for the entered place and updates the map
-                }
-                return true // Event is handled
+                query?.let { searchPlace(it, isFrom = true) }
+                return true
             }
 
-            // Triggered as the user types, providing real-time suggestions
             override fun onQueryTextChange(newText: String?): Boolean {
-                newText?.let { text ->
-                    if (text.length > 2) { // Only fetch suggestions after 3 characters to reduce requests
-                        provideSearchSuggestions(text)
-                    }
-                }
-                return true // Event is handled
+                newText?.let { if (it.length > 2) provideSearchSuggestions(it, isFrom = true) }
+                return true
             }
         })
 
-        // Handles suggestion selection from the dropdown
-        searchView.setOnSuggestionListener(object : SearchView.OnSuggestionListener {
-            override fun onSuggestionSelect(position: Int): Boolean {
-                return true // Not typically used with SearchView, but required to implement
+        fromSearchView.setOnSuggestionListener(object : SearchView.OnSuggestionListener {
+            override fun onSuggestionSelect(position: Int): Boolean = true
+            override fun onSuggestionClick(position: Int): Boolean {
+                if (position < fromSuggestionAddresses.size) {
+                    val address = fromSuggestionAddresses[position]
+                    val text = formatAddress(address) // Use the same format as suggestions
+                    fromSearchView.setQuery(text, false)
+                    fromLatLng = LatLng(address.latitude, address.longitude)
+                    updateMapWithFromTo()
+                }
+                return true
+            }
+        })
+
+        toSearchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                query?.let { searchPlace(it, isFrom = false) }
+                return true
             }
 
+            override fun onQueryTextChange(newText: String?): Boolean {
+                newText?.let { if (it.length > 2) provideSearchSuggestions(it, isFrom = false) }
+                return true
+            }
+        })
+
+        toSearchView.setOnSuggestionListener(object : SearchView.OnSuggestionListener {
+            override fun onSuggestionSelect(position: Int): Boolean = true
             override fun onSuggestionClick(position: Int): Boolean {
-                if (position < suggestionAddresses.size) {
-                    val selectedAddress = suggestionAddresses[position]
-                    val selectedText = "${selectedAddress.featureName}, ${selectedAddress.locality ?: ""}, ${selectedAddress.countryName ?: ""}".trim(',', ' ')
-                    searchView.setQuery(selectedText, false) // Sets the selected suggestion text in the SearchView
-                    val latLng = LatLng(selectedAddress.latitude, selectedAddress.longitude)
-                    updateMapWithLocation(latLng, selectedText) // Updates the map with the selected location
+                if (position < toSuggestionAddresses.size) {
+                    val address = toSuggestionAddresses[position]
+                    val text = formatAddress(address) // Use the same format as suggestions
+                    toSearchView.setQuery(text, false)
+                    toLatLng = LatLng(address.latitude, address.longitude)
+                    updateMapWithFromTo()
                 }
-                return true // Event is handled
+                return true
             }
         })
     }
 
-    // Fetches and displays location suggestions in a dropdown as the user types
-    private fun provideSearchSuggestions(query: String) {
-        val geocoder = Geocoder(this) // Creates a Geocoder instance to convert text to locations
+    private fun swapSearchViewContents() {
+        val fromText = fromSearchView.query.toString()
+        val toText = toSearchView.query.toString()
+        fromSearchView.setQuery(toText, false)
+        toSearchView.setQuery(fromText, false)
+
+        val tempLatLng = fromLatLng
+        fromLatLng = toLatLng
+        toLatLng = tempLatLng
+
+        updateMapWithFromTo()
+    }
+
+    private fun provideSearchSuggestions(query: String, isFrom: Boolean) {
+        val geocoder = Geocoder(this)
         try {
-            val addresses: List<Address>? = geocoder.getFromLocationName(query, 5) // Gets up to 5 matching locations
+            val addresses = geocoder.getFromLocationName(query, 5)
             if (!addresses.isNullOrEmpty()) {
-                suggestionAddresses = addresses // Stores addresses for selection
-                val suggestions = addresses.map { address ->
-                    "${address.featureName}, ${address.locality ?: ""}, ${address.countryName ?: ""}"
-                        .trim(',', ' ') // Formats each suggestion as "Place, City, Country"
-                }
+                if (isFrom) fromSuggestionAddresses = addresses else toSuggestionAddresses = addresses
+                val suggestions = addresses.map { formatAddress(it) }
 
-                // Creates a MatrixCursor to store suggestions for the adapter
                 val cursor = MatrixCursor(arrayOf("_id", "suggestion"))
-                suggestions.forEachIndexed { index, suggestion ->
-                    cursor.addRow(arrayOf(index, suggestion)) // Adds each suggestion with an ID
-                }
+                suggestions.forEachIndexed { index, suggestion -> cursor.addRow(arrayOf(index, suggestion)) }
 
-                // Configures a SimpleCursorAdapter to display suggestions in the SearchView dropdown
                 val adapter = SimpleCursorAdapter(
-                    this,
-                    android.R.layout.simple_dropdown_item_1line, // Uses a simple dropdown layout
-                    cursor,
-                    arrayOf("suggestion"), // Column to display
-                    intArrayOf(android.R.id.text1), // Maps to the TextView in the layout
-                    0
+                    this, android.R.layout.simple_dropdown_item_1line, cursor,
+                    arrayOf("suggestion"), intArrayOf(android.R.id.text1), 0
                 )
-                searchView.suggestionsAdapter = adapter // Sets the adapter for suggestions
+                if (isFrom) fromSearchView.suggestionsAdapter = adapter else toSearchView.suggestionsAdapter = adapter
             }
         } catch (e: IOException) {
-            Log.e("SearchSuggestions", "Failed to get suggestions", e) // Logs errors if geocoding fails
+            Log.e("SearchSuggestions", "Failed to get suggestions", e)
         }
     }
 
-    // Searches for a place based on the user’s query and updates the map with a marker and overlays
-    private fun searchPlace(query: String) {
-        val geocoder = Geocoder(this) // Creates a Geocoder instance for location lookup
+    private fun formatAddress(address: Address): String {
+        val city = address.locality ?: ""
+        val state = address.adminArea ?: ""
+        val country = address.countryName ?: ""
+        return "$city, $state, $country".trim(',', ' ')
+    }
+
+    private fun searchPlace(query: String, isFrom: Boolean) {
+        val geocoder = Geocoder(this)
         try {
-            val addresses: List<Address>? = geocoder.getFromLocationName(query, 1) // Gets the top result
+            val addresses = geocoder.getFromLocationName(query, 1)
             if (!addresses.isNullOrEmpty()) {
                 val address = addresses[0]
-                val latLng = LatLng(address.latitude, address.longitude) // Converts address to LatLng
-                updateMapWithLocation(latLng, query) // Updates the map with the searched location
+                val latLng = LatLng(address.latitude, address.longitude)
+                if (isFrom) fromLatLng = latLng else toLatLng = latLng
+                updateMapWithFromTo()
             } else {
-                Log.e("Search", "No location found for query: $query") // Logs if no result is found
+                Log.e("Search", "No location found for query: $query")
             }
         } catch (e: IOException) {
-            Log.e("Search", "Geocoder failed", e) // Logs network or geocoding errors
+            Log.e("Search", "Geocoder failed", e)
         }
     }
 
-    // Updates the map with a marker, camera movement, and overlays for a given location
-    private fun updateMapWithLocation(latLng: LatLng, title: String) {
-        myMap.clear() // Clears existing markers and overlays (optional)
+    private fun updateMapWithFromTo() {
+        myMap.clear()
+        fromLatLng?.let {
+            myMap.addMarker(
+                MarkerOptions().position(it).title("From").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
+            )
+            myMap.moveCamera(CameraUpdateFactory.newLatLng(it))
+            myMap.animateCamera(CameraUpdateFactory.zoomTo(12f), 2000, null)
+            addOverlays(it)
+        }
+        toLatLng?.let {
+            myMap.addMarker(
+                MarkerOptions().position(it).title("To").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+            )
+            if (fromLatLng == null) {
+                myMap.moveCamera(CameraUpdateFactory.newLatLng(it))
+                myMap.animateCamera(CameraUpdateFactory.zoomTo(12f), 2000, null)
+            }
+            addOverlays(it)
+        }
 
-        // Adds a marker at the specified location
-        val markerOptions = MarkerOptions()
-            .position(latLng)
-            .title(title)
-            .snippet("Searched location")
-            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_CYAN))
-        myMap.addMarker(markerOptions)
-
-        // Moves and animates the camera to focus on the location
-        myMap.moveCamera(CameraUpdateFactory.newLatLng(latLng))
-        myMap.animateCamera(CameraUpdateFactory.zoomTo(12f), 2000, null)
-
-        // Adds circle, polyline, and polygon overlays around the location
-        addOverlays(latLng)
+        if (fromLatLng != null && toLatLng != null) {
+            myMap.addPolyline(
+                PolylineOptions()
+                    .add(fromLatLng, toLatLng)
+                    .width(10f)
+                    .color(android.graphics.Color.BLUE)
+            )
+            calculateDistance()
+        } else {
+            distanceText.text = "Distance: N/A"
+        }
     }
 
-    // Retrieves the device’s current location and updates the map with a marker and overlays
+    private fun calculateDistance() {
+        if (fromLatLng != null && toLatLng != null) {
+            val locationA = Location("From")
+            locationA.latitude = fromLatLng!!.latitude
+            locationA.longitude = fromLatLng!!.longitude
+
+            val locationB = Location("To")
+            locationB.latitude = toLatLng!!.latitude
+            locationB.longitude = toLatLng!!.longitude
+
+            val distanceMeters = locationA.distanceTo(locationB)
+            val distanceKm = distanceMeters / 1000.0
+            distanceText.text = "Distance: ${distanceKm.roundToInt()} km"
+        }
+    }
+
     private fun getCurrentLocation() {
-        if (checkLocationPermission()) { // Ensures location permissions are granted
+        if (checkLocationPermission()) {
             fusedLocationClient.lastLocation
                 .addOnSuccessListener { location: Location? ->
                     location?.let {
-                        val currentLatLng = LatLng(it.latitude, it.longitude) // Gets current coordinates
-                        val markerOptions = MarkerOptions()
-                            .position(currentLatLng)
-                            .title("My Location")
-                            .snippet("You are here!")
-                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA))
-                        myMap.addMarker(markerOptions) // Adds marker at current location
-                        myMap.moveCamera(CameraUpdateFactory.newLatLng(currentLatLng)) // Centers the map
-                        myMap.animateCamera(CameraUpdateFactory.zoomTo(12f), 2000, null) // Zooms in with animation
-                        addOverlays(currentLatLng) // Adds overlays around current location
-                    } ?: run {
-                        Log.e("Location", "Last known location is null") // Logs if location is unavailable
-                    }
+                        val currentLatLng = LatLng(it.latitude, it.longitude)
+                        myMap.addMarker(
+                            MarkerOptions()
+                                .position(currentLatLng)
+                                .title("My Location")
+                                .snippet("You are here!")
+                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_MAGENTA))
+                        )
+                        myMap.moveCamera(CameraUpdateFactory.newLatLng(currentLatLng))
+                        myMap.animateCamera(CameraUpdateFactory.zoomTo(12f), 2000, null)
+                        addOverlays(currentLatLng)
+                    } ?: Log.e("Location", "Last known location is null")
                 }
-                .addOnFailureListener { e ->
-                    Log.e("Location", "Failed to get location", e) // Logs location retrieval errors
-                }
+                .addOnFailureListener { e -> Log.e("Location", "Failed to get location", e) }
         }
     }
 
-    // Adds a circle, polyline, and polygon overlays around a specified LatLng on the map
     private fun addOverlays(latLng: LatLng) {
         myMap.addCircle(
             CircleOptions()
                 .center(latLng)
-                .radius(1000.0) // Creates a 1km radius circle
+                .radius(1000.0)
                 .strokeColor(android.graphics.Color.RED)
-                .fillColor(android.graphics.Color.argb(50, 255, 0, 0)) // Red outline with semi-transparent fill
+                .fillColor(android.graphics.Color.argb(50, 255, 0, 0))
         )
         myMap.addPolyline(
             PolylineOptions()
-                .add(latLng, LatLng(latLng.latitude + 0.01, latLng.longitude + 0.01)) // Draws a line to a nearby point
+                .add(latLng, LatLng(latLng.latitude + 0.01, latLng.longitude + 0.01))
                 .width(10f)
-                .color(android.graphics.Color.BLUE) // Blue line with 10px width
+                .color(android.graphics.Color.BLUE)
         )
         myMap.addPolygon(
             PolygonOptions()
@@ -264,44 +315,39 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                     LatLng(latLng.latitude + 0.01, latLng.longitude - 0.01),
                     LatLng(latLng.latitude + 0.01, latLng.longitude + 0.01),
                     LatLng(latLng.latitude - 0.01, latLng.longitude + 0.01)
-                ) // Creates a square polygon
+                )
                 .strokeColor(android.graphics.Color.GREEN)
-                .fillColor(android.graphics.Color.argb(50, 0, 255, 0)) // Green outline with semi-transparent fill
+                .fillColor(android.graphics.Color.argb(50, 0, 255, 0))
         )
     }
 
-    // Requests location permissions from the user if not already granted
     private fun requestLocationPermissions() {
-        if (!checkLocationPermission()) { // Checks if permissions are missing
+        if (!checkLocationPermission()) {
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                LOCATION_PERMISSION_REQUEST_CODE // Requests fine and coarse location permissions
+                LOCATION_PERMISSION_REQUEST_CODE
             )
         }
     }
 
-    // Checks if either fine or coarse location permission is granted
     private fun checkLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED // Returns true if either permission is granted
+                PackageManager.PERMISSION_GRANTED
     }
 
-    // Handles the result of the permission request and updates the map if granted
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE && grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) { // Verifies permission was granted
+        ) {
             if (checkLocationPermission()) {
-                myMap.isMyLocationEnabled = true // Enables the location layer
-                getCurrentLocation() // Updates map with current location
+                myMap.isMyLocationEnabled = true
+                getCurrentLocation()
             }
         }
     }

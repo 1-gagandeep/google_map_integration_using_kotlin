@@ -8,28 +8,73 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <!-- Map Fragment (Full Screen) -->
+    <fragment
+        android:id="@+id/map"
+        android:name="com.google.android.gms.maps.SupportMapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- From SearchView (Overlay on Top) -->
     <androidx.appcompat.widget.SearchView
-        android:id="@+id/mapSearch"
+        android:id="@+id/fromSearch"
         android:layout_width="280dp"
         android:layout_height="wrap_content"
         android:layout_margin="10dp"
-        android:queryHint="Search"
+        android:queryHint="From"
         android:iconifiedByDefault="false"
         android:elevation="5dp"
+        android:theme="@style/CustomSearchView"
         android:background="@drawable/bg_search_view"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"/>
+        app:layout_constraintTop_toTopOf="parent" />
 
-    <fragment
-        android:name="com.google.android.gms.maps.SupportMapFragment"
-        android:id="@+id/map"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_constraintTop_toBottomOf="@id/mapSearch"
-        app:layout_constraintBottom_toBottomOf="parent"
+    <!-- Swap Icon (Between SearchViews) -->
+    <ImageView
+        android:id="@+id/swapIcon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@android:drawable/ic_menu_rotate"
+    android:contentDescription="Swap From and To"
+    android:layout_marginTop="5dp"
+    android:layout_marginBottom="5dp"
+    android:elevation="5dp"
+    app:layout_constraintTop_toBottomOf="@id/fromSearch"
+    app:layout_constraintBottom_toTopOf="@id/toSearch"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- To SearchView (Overlay Below Swap Icon) -->
+    <androidx.appcompat.widget.SearchView
+        android:id="@+id/toSearch"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:layout_margin="10dp"
+        android:queryHint="To"
+        android:iconifiedByDefault="false"
+        android:elevation="5dp"
+        android:theme="@style/CustomSearchView"
+        android:background="@drawable/bg_search_view"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        />
+        app:layout_constraintTop_toBottomOf="@id/swapIcon" />
 
+    <!-- Distance TextView (Overlay Above Keyboard) -->
+    <TextView
+        android:id="@+id/distanceText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Finding Distance"
+        android:textColor="@android:color/darker_gray"
+        android:textSize="16sp"
+        android:layout_marginBottom="16dp"
+        android:elevation="2dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>
